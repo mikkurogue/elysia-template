@@ -20,7 +20,7 @@ An opinionated REST API template built with modern TypeScript tooling.
 ### 1. Clone and Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/mikkurogue/elysia-template.git
 cd api-template
 bun install
 ```
