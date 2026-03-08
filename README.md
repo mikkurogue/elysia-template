@@ -8,7 +8,7 @@ An opinionated REST API template built with modern TypeScript tooling.
 - **[Elysia](https://elysiajs.com)** - Ergonomic web framework with end-to-end type safety
 - **[Drizzle ORM](https://orm.drizzle.team)** - TypeScript ORM with zero overhead
 - **[neverthrow](https://github.com/supermacro/neverthrow)** - Type-safe error handling with `Result` and `ResultAsync`
-- **[evlog](evlog.dev)** - Structured wide-event logging
+- **[evlog](https://www.evlog.dev)** - Structured wide-event logging
 
 ## Prerequisites
 
