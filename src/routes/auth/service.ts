@@ -1,5 +1,5 @@
 import { eq, or } from "drizzle-orm";
-import { err, ok, ResultAsync } from "neverthrow";
+import { err, ok, type Result, ResultAsync } from "neverthrow";
 import { db, users } from "../../database";
 import type { AuthModel } from "./model";
 
@@ -17,10 +17,9 @@ type PasswordHashError = {
 };
 
 export abstract class AuthService {
-	static login({
-		email,
-		password,
-	}: AuthModel.LoginUser): ResultAsync<User, AuthError> {
+	static findUserByEmail(
+		email: string,
+	): ResultAsync<User | undefined, AuthError> {
 		return ResultAsync.fromPromise(
 			db.query.users.findFirst({
 				where: eq(users.email, email),
@@ -30,16 +29,27 @@ export abstract class AuthService {
 				status: 404,
 				message: "User not found",
 			}),
-		)
-			.andThen((user) =>
-				user
-					? ok(user)
-					: err({
-							_tag: "UserNotFound" as const,
-							status: 404,
-							message: "User not found",
-						}),
-			)
+		);
+	}
+
+	static validateUserExist(user: User | undefined): Result<User, AuthError> {
+		if (!user) {
+			return err({
+				_tag: "UserNotFound" as const,
+				status: 404,
+				message: "User not found",
+			});
+		}
+
+		return ok(user);
+	}
+
+	static login({
+		email,
+		password,
+	}: AuthModel.LoginUser): ResultAsync<User, AuthError> {
+		return AuthService.findUserByEmail(email)
+			.andThen(AuthService.validateUserExist)
 			.andThen((user) =>
 				AuthService.password
 					.verifyPassword(password, user.password)
