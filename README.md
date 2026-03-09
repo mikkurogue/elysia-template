@@ -7,7 +7,7 @@ An opinionated REST API template built with modern TypeScript tooling.
 - **[Bun](https://bun.sh)** - Fast JavaScript runtime and package manager
 - **[Elysia](https://elysiajs.com)** - Ergonomic web framework with end-to-end type safety
 - **[Drizzle ORM](https://orm.drizzle.team)** - TypeScript ORM with zero overhead
-- **[neverthrow](https://github.com/supermacro/neverthrow)** - Type-safe error handling with `Result` and `ResultAsync`
+- **[better-result](https://github.com/dmmulroy/better-result)** - Lightweight Result type with generator-based composition by the goat @dmmulroy
 - **[evlog](https://www.evlog.dev)** - Structured wide-event logging
 
 ## Prerequisites
@@ -87,7 +87,7 @@ src/
     └── auth/
         ├── index.ts      # Auth route handlers
         ├── model.ts      # Request/response validation schemas
-        └── service.ts    # Business logic with ResultAsync
+        └── service.ts    # Business logic with Result.gen()
 ```
 
 ## Architecture
@@ -95,29 +95,34 @@ src/
 This template follows a layered architecture:
 
 1. **Routes** (`routes/*/index.ts`) - HTTP handlers, cookie management, response mapping
-2. **Services** (`routes/*/service.ts`) - Pure business logic using `ResultAsync` for composable error handling
+2. **Services** (`routes/*/service.ts`) - Pure business logic using `Result.gen()` for composable error handling
 3. **Models** (`routes/*/model.ts`) - TypeBox schemas for request validation
 
 ### Error Handling Pattern
 
-Services return `ResultAsync<T, E>` for type-safe, composable error handling:
+Services return `Promise<Result<T, E>>` for type-safe, composable error handling:
 
 ```typescript
-// Service returns ResultAsync (no HTTP concerns)
-static login(credentials): ResultAsync<User, AuthError> {
-    return ResultAsync.fromPromise(db.query.users.findFirst(...))
-        .andThen((user) => user ? ok(user) : err({ _tag: "UserNotFound", ... }))
-        .andThen((user) => verifyPassword(...).andThen(...));
+// Service returns Promise<Result> using generator composition
+static async login(credentials): Promise<Result<User, AuthError>> {
+    return Result.gen(async function* () {
+        const maybeUser = yield* Result.await(findUserByEmail(email));
+        const user = yield* validateUserExist(maybeUser);
+        const isValid = yield* Result.await(verifyPassword(...));
+        if (!isValid) return Result.err({ _tag: "InvalidCredentials", ... });
+        return Result.ok(user);
+    });
 }
 
-// Route handler maps Result to HTTP response
-AuthService.login(body).match(
-    (user) => { /* success: set cookie, return user */ },
-    (error) => {
+// Route handler matches Result to HTTP response
+const result = await AuthService.login(body);
+result.match({
+    ok: (user) => { /* success: set cookie, return user */ },
+    err: (error) => {
         log.error(error.message, { _tag: error._tag });
         throw status(error.status, error.message);
     }
-);
+});
 ```
 
 ## Available Scripts

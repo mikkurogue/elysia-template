@@ -1,4 +1,4 @@
-import { err, ok, Result } from "neverthrow";
+import { Result } from "better-result";
 
 type EnvError = {
 	_tag: "KeyNotFound";
@@ -12,17 +12,14 @@ type EnvError = {
 export function safeReadEnv<T extends string>(
 	key: string,
 ): Result<T, EnvError> {
-	const result = Result.fromThrowable(
-		() => process.env?.[key] as T,
-		() => ({
+	const value = process.env?.[key] as T | undefined;
+
+	if (value === undefined) {
+		return Result.err({
 			_tag: "KeyNotFound" as const,
 			message: `Environment variable ${key} not found`,
-		}),
-	)();
-
-	if (result.isErr()) {
-		return err(result.error);
+		});
 	}
 
-	return ok(result.value);
+	return Result.ok(value);
 }

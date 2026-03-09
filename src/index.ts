@@ -17,8 +17,7 @@ export const app = new Elysia()
 	.use(openapi())
 	.use(evlog())
 	.get("/", () => "Hello Elysia")
-	.use(AuthRoute)
-	.listen(3000);
+	.use(AuthRoute);
 
 if (import.meta.main) {
 	app.listen(3000);

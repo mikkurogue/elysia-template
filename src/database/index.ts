@@ -1,20 +1,16 @@
+import { Result } from "better-result";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { log } from "evlog";
 import postgres from "postgres";
 import { safeReadEnv } from "../lib/safe-read-env";
 import * as schema from "./schema";
 
-const envResult = safeReadEnv<string>("DATABASE_URL");
-const connectionString = envResult.match(
-	(value) => value,
-	(error) => {
-		log.error(
-			"Fatal",
-			"DATABASE_URL environment variable is required but not found",
-		);
-		throw error;
-	},
-);
+const dbUrlResult = safeReadEnv<string>("DATABASE_URL");
+if (Result.isError(dbUrlResult)) {
+	log.error("Fatal", "DATABASE_URL environment variable is required");
+	throw new Error("DATABASE_URL environment variable is required");
+}
+const connectionString = dbUrlResult.value;
 
 export const client = postgres(connectionString, {
 	max: 10,
