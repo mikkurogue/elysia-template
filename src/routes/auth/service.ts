@@ -1,5 +1,5 @@
+import { Result } from "better-result";
 import { eq, or } from "drizzle-orm";
-import { err, ok, type Result, ResultAsync } from "neverthrow";
 import { db, users } from "../../database";
 import type { AuthModel } from "./model";
 
@@ -17,140 +17,168 @@ type PasswordHashError = {
 };
 
 export abstract class AuthService {
-	static findUserByEmail(
+	private static async findUserByEmail(
 		email: string,
-	): ResultAsync<User | undefined, AuthError> {
-		return ResultAsync.fromPromise(
-			db.query.users.findFirst({
-				where: eq(users.email, email),
-			}),
-			() => ({
+	): Promise<Result<User | undefined, AuthError>> {
+		return Result.tryPromise({
+			try: () =>
+				db.query.users.findFirst({
+					where: eq(users.email, email),
+				}),
+			catch: () => ({
 				_tag: "UserNotFound" as const,
 				status: 404,
 				message: "User not found",
 			}),
-		);
+		});
 	}
 
-	static validateUserExist(user: User | undefined): Result<User, AuthError> {
+	private static validateUserExist(
+		user: User | undefined,
+	): Result<User, AuthError> {
 		if (!user) {
-			return err({
+			return Result.err({
 				_tag: "UserNotFound" as const,
 				status: 404,
 				message: "User not found",
 			});
 		}
 
-		return ok(user);
+		return Result.ok(user);
 	}
 
-	static login({
+	static async login({
 		email,
 		password,
-	}: AuthModel.LoginUser): ResultAsync<User, AuthError> {
-		return AuthService.findUserByEmail(email)
-			.andThen(AuthService.validateUserExist)
-			.andThen((user) =>
+	}: AuthModel.LoginUser): Promise<Result<User, AuthError>> {
+		return Result.gen(async function* () {
+			const maybeUser = yield* Result.await(AuthService.findUserByEmail(email));
+			const user = yield* AuthService.validateUserExist(maybeUser);
+
+			const isValid = yield* Result.await(
 				AuthService.password
 					.verifyPassword(password, user.password)
-					.mapErr(() => ({
-						_tag: "InvalidCredentials" as const,
-						status: 401,
-						message: "Invalid credentials",
-					}))
-					.andThen((valid) =>
-						valid
-							? ok(user)
-							: err({
-									_tag: "InvalidCredentials" as const,
-									status: 401,
-									message: "Invalid credentials",
-								}),
+					.then((result) =>
+						result.mapError(() => ({
+							_tag: "InvalidCredentials" as const,
+							status: 401,
+							message: "Invalid credentials",
+						})),
 					),
 			);
+
+			if (!isValid) {
+				return Result.err({
+					_tag: "InvalidCredentials" as const,
+					status: 401,
+					message: "Invalid credentials",
+				});
+			}
+
+			return Result.ok(user);
+		});
 	}
 
-	static register(data: AuthModel.RegisterUser): ResultAsync<User, AuthError> {
-		return ResultAsync.fromPromise(
-			db.query.users.findFirst({
-				where: or(
-					eq(users.username, data.username),
-					eq(users.email, data.email),
+	static async register(
+		data: AuthModel.RegisterUser,
+	): Promise<Result<User, AuthError>> {
+		return Result.gen(async function* () {
+			// Check if user already exists
+			const existingUser = yield* Result.await(
+				Result.tryPromise({
+					try: () =>
+						db.query.users.findFirst({
+							where: or(
+								eq(users.username, data.username),
+								eq(users.email, data.email),
+							),
+						}),
+					catch: () => ({
+						_tag: "UserNotFound" as const,
+						status: 500,
+						message: "Database error",
+					}),
+				}),
+			);
+
+			if (existingUser) {
+				return Result.err({
+					_tag: "UserAlreadyExists" as const,
+					status: 409,
+					message: "Username or email already exists",
+				});
+			}
+
+			// Hash password
+			const hashedPassword = yield* Result.await(
+				AuthService.password.hashPassword(data.password).then((result) =>
+					result.mapError(() => ({
+						_tag: "InvalidCredentials" as const,
+						status: 500,
+						message: "Failed to hash password",
+					})),
 				),
-			}),
-			() => ({
-				_tag: "UserNotFound" as const,
-				status: 500,
-				message: "Database error",
-			}),
-		)
-			.andThen((existingUser) =>
-				existingUser
-					? err({
-							_tag: "UserAlreadyExists" as const,
-							status: 409,
-							message: "Username or email already exists",
-						})
-					: ok(undefined),
-			)
-			.andThen(() =>
-				AuthService.password.hashPassword(data.password).mapErr(() => ({
-					_tag: "InvalidCredentials" as const,
-					status: 500,
-					message: "Failed to hash password",
-				})),
-			)
-			.andThen((hashedPassword) =>
-				ResultAsync.fromPromise(
-					db
-						.insert(users)
-						.values({
-							username: data.username,
-							email: data.email,
-							password: hashedPassword,
-						})
-						.returning()
-						.then((rows) => rows[0]),
-					() => ({
+			);
+
+			// Create user
+			const newUser = yield* Result.await(
+				Result.tryPromise({
+					try: () =>
+						db
+							.insert(users)
+							.values({
+								username: data.username,
+								email: data.email,
+								password: hashedPassword,
+							})
+							.returning()
+							.then((rows) => rows[0]),
+					catch: () => ({
 						_tag: "UserAlreadyExists" as const,
 						status: 500,
 						message: "Failed to create user",
 					}),
-				),
+				}),
 			);
+
+			return Result.ok(newUser);
+		});
 	}
 
 	static password = {
 		/**
 		 * Hash a password
 		 */
-		hashPassword(password: string): ResultAsync<string, PasswordHashError> {
-			return ResultAsync.fromPromise(
-				Bun.password.hash(password, {
-					algorithm: "bcrypt",
-					cost: 10,
-				}),
-				(error) => ({
+		async hashPassword(
+			password: string,
+		): Promise<Result<string, PasswordHashError>> {
+			return Result.tryPromise({
+				try: () =>
+					Bun.password.hash(password, {
+						algorithm: "bcrypt",
+						cost: 10,
+					}),
+				catch: (error) => ({
 					_tag: "HashingError" as const,
 					message: `Error hashing password: ${error instanceof Error ? error.message : String(error)}`,
 				}),
-			);
+			});
 		},
 
 		/**
 		 * Verify a password against a hash
 		 */
-		verifyPassword(
+		async verifyPassword(
 			password: string,
 			hash: string,
-		): ResultAsync<boolean, PasswordHashError> {
-			return ResultAsync.fromPromise(
-				Bun.password.verify(password, hash),
-				(error) => ({
+		): Promise<Result<boolean, PasswordHashError>> {
+			return Result.tryPromise({
+				try: () => Bun.password.verify(password, hash),
+				catch: (error) => ({
 					_tag: "VerificationError" as const,
 					message: `Error verifying password: ${error instanceof Error ? error.message : String(error)}`,
 				}),
-			);
+			});
 		},
 	};
 }

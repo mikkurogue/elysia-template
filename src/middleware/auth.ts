@@ -1,5 +1,6 @@
 import jwt from "@elysiajs/jwt";
 import { type Elysia, status } from "elysia";
+import { log } from "evlog";
 import { safeReadEnv } from "../lib/safe-read-env";
 
 export interface JWTPayload {
@@ -8,12 +9,13 @@ export interface JWTPayload {
 	username: string;
 }
 
-const jwtSecret = safeReadEnv<string>("JWT_SECRET").match(
-	(value) => value,
-	(error) => {
-		throw new Error(error.message);
+const jwtSecret = safeReadEnv<string>("JWT_SECRET").match({
+	ok: (value) => value,
+	err: (error) => {
+		log.error("Fatal", error.message);
+		throw new Error("JWT_SECRET missing");
 	},
-);
+});
 
 export const authMiddleware = (app: Elysia) =>
 	app

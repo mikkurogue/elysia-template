@@ -1,17 +1,20 @@
 import jwt from "@elysiajs/jwt";
+import { Result } from "better-result";
 import Elysia, { status } from "elysia";
+import { log } from "evlog";
 import { evlog } from "evlog/elysia";
 import { safeReadEnv } from "../../lib/safe-read-env";
 import { authMiddleware } from "../../middleware/auth";
 import { AuthModel } from "./model";
 import { AuthService } from "./service";
 
-const jwtSecret = safeReadEnv<string>("JWT_SECRET").match(
-	(value) => value,
-	(error) => {
-		throw new Error(error.message);
+const jwtSecret = safeReadEnv<string>("JWT_SECRET").match({
+	ok: (value) => value,
+	err: (error) => {
+		log.error("Fatal", error.message);
+		throw new Error("JWT_SECRET missing");
 	},
-);
+});
 
 const AuthRoute = new Elysia({ prefix: "/auth" })
 	.use(evlog())
@@ -25,37 +28,38 @@ const AuthRoute = new Elysia({ prefix: "/auth" })
 	.post(
 		"/login",
 		async ({ body, jwt, cookie: { auth }, log }) => {
-			return AuthService.login(body).match(
-				async (user) => {
-					const token = await jwt.sign({
-						id: user.id,
-						email: user.email,
-						username: user.username,
-					});
+			const result = await AuthService.login(body);
 
-					auth.set({
-						value: token,
-						httpOnly: true,
-						maxAge: 7 * 86400,
-						path: "/",
-						sameSite: "lax",
-						secure: process.env.NODE_ENV === "production",
-					});
+			if (Result.isError(result)) {
+				const error = result.error;
+				log.error(error.message, { _tag: error._tag });
+				throw status(error.status, error.message);
+			}
 
-					return {
-						success: true,
-						user: {
-							id: user.id,
-							email: user.email,
-							username: user.username,
-						},
-					};
+			const user = result.value;
+			const token = await jwt.sign({
+				id: user.id,
+				email: user.email,
+				username: user.username,
+			});
+
+			auth.set({
+				value: token,
+				httpOnly: true,
+				maxAge: 7 * 86400,
+				path: "/",
+				sameSite: "lax",
+				secure: process.env.NODE_ENV === "production",
+			});
+
+			return {
+				success: true,
+				user: {
+					id: user.id,
+					email: user.email,
+					username: user.username,
 				},
-				(error) => {
-					log.error(error.message, { _tag: error._tag });
-					throw status(error.status, error.message);
-				},
-			);
+			};
 		},
 		{
 			body: AuthModel.loginUser,
@@ -70,20 +74,23 @@ const AuthRoute = new Elysia({ prefix: "/auth" })
 	.post(
 		"/register",
 		async ({ body, log }) => {
-			return AuthService.register(body).match(
-				(user) => ({
-					success: true,
-					user: {
-						id: user.id,
-						email: user.email,
-						username: user.username,
-					},
-				}),
-				(error) => {
-					log.error(error.message, { _tag: error._tag });
-					throw status(error.status, error.message);
+			const result = await AuthService.register(body);
+
+			if (Result.isError(result)) {
+				const error = result.error;
+				log.error(error.message, { _tag: error._tag });
+				throw status(error.status, error.message);
+			}
+
+			const user = result.value;
+			return {
+				success: true,
+				user: {
+					id: user.id,
+					email: user.email,
+					username: user.username,
 				},
-			);
+			};
 		},
 		{
 			body: AuthModel.registerUser,
