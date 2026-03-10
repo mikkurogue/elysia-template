@@ -1,5 +1,4 @@
 import jwt from "@elysiajs/jwt";
-import { Result } from "better-result";
 import Elysia, { status } from "elysia";
 import { log } from "evlog";
 import { evlog } from "evlog/elysia";

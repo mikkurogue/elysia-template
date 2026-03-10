@@ -1,5 +1,6 @@
 import { Result } from "better-result";
-import type { users } from "../../database";
+import { eq } from "drizzle-orm";
+import { db, users } from "../../database";
 
 type User = typeof users.$inferSelect;
 
@@ -9,25 +10,29 @@ type UserError = {
 };
 
 export abstract class UserService {
-	static getUserProfile(userId: string): Promise<Result<User, UserError>> {
-		// TODO: Implement actual database query to fetch user profile by userId
-
-		const user = {
-			id: userId,
-			username: "",
-			email: "",
-			password: "",
-			avatar: null,
-			createdAt: new Date(),
-			updatedAt: null,
-		} satisfies User;
-
-		return Result.tryPromise({
-			try: () => Promise.resolve(user),
+	static async getUserProfile(
+		userId: string,
+	): Promise<Result<User, UserError>> {
+		const result = await Result.tryPromise({
+			try: () =>
+				db.query.users.findFirst({
+					where: eq(users.id, userId),
+				}),
 			catch: () => ({
-				_tag: "UserNotFound" as const,
-				message: "User not found",
+				_tag: "DatabaseError" as const,
+				message: "Failed to fetch user",
 			}),
 		});
+
+		if (result.isErr()) return result;
+
+		if (!result.value) {
+			return Result.err({
+				_tag: "UserNotFound",
+				message: "User not found",
+			});
+		}
+
+		return Result.ok(result.value);
 	}
 }
