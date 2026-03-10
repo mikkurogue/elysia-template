@@ -30,7 +30,7 @@ const AuthRoute = new Elysia({ prefix: "/auth" })
 		async ({ body, jwt, cookie: { auth }, log }) => {
 			const result = await AuthService.login(body);
 
-			if (Result.isError(result)) {
+			if (result.isErr()) {
 				const error = result.error;
 				log.error(error.message, { _tag: error._tag });
 				throw status(error.status, error.message);
