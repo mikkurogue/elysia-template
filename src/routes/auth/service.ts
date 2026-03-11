@@ -1,9 +1,8 @@
 import { Result } from "better-result";
 import { eq, or } from "drizzle-orm";
 import { db, users } from "../../database";
+import type { User } from "../../types/user";
 import type { AuthModel } from "./model";
-
-type User = typeof users.$inferSelect;
 
 type AuthError = {
 	_tag: "InvalidCredentials" | "UserAlreadyExists" | "UserNotFound";
