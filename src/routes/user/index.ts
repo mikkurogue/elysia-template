@@ -2,6 +2,7 @@ import jwt from "@elysiajs/jwt";
 import Elysia, { status } from "elysia";
 import { log } from "evlog";
 import { evlog } from "evlog/elysia";
+import { unwrapOrThrow } from "../../lib/result-http";
 import { safeReadEnv } from "../../lib/safe-read-env";
 import { authMiddleware } from "../../middleware/auth";
 import { UserService } from "./service";
@@ -23,19 +24,16 @@ const UserRoute = new Elysia({ prefix: "/user" })
 			secret: jwtSecret,
 		}),
 	)
-	.get("/profile", async ({ user, body, log }) => {
-		log.set({
-			route: "/user/profile",
+	.get("/profile", async ({ user, log }) => {
+		log.set({ route: "/user/profile" });
+
+		return unwrapOrThrow({
+			ok: await UserService.getUserProfileById(user.id),
+			err: (e) => {
+				log.error(e.message, { _tag: e._tag });
+				throw status(e.status, e.message);
+			},
 		});
-
-		const result = await UserService.getUserProfile(user.id);
-		if (result.isErr()) {
-			const e = result.error;
-			log.error(e.message, { _tag: e._tag });
-			throw status(404, "No profile found for user");
-		}
-
-		return result.value;
 	});
 
 export { UserRoute };

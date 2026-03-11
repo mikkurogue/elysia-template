@@ -1,8 +1,8 @@
 import jwt from "@elysiajs/jwt";
-import { Result } from "better-result";
 import Elysia, { status } from "elysia";
 import { log } from "evlog";
 import { evlog } from "evlog/elysia";
+import { unwrapOrThrow } from "../../lib/result-http";
 import { safeReadEnv } from "../../lib/safe-read-env";
 import { authMiddleware } from "../../middleware/auth";
 import { AuthModel } from "./model";
@@ -28,15 +28,14 @@ const AuthRoute = new Elysia({ prefix: "/auth" })
 	.post(
 		"/login",
 		async ({ body, jwt, cookie: { auth }, log }) => {
-			const result = await AuthService.login(body);
+			const user = unwrapOrThrow({
+				ok: await AuthService.login(body),
+				err: (e) => {
+					log.error(e.message, { _tag: e._tag });
+					throw status(e.status, e.message);
+				},
+			});
 
-			if (result.isErr()) {
-				const error = result.error;
-				log.error(error.message, { _tag: error._tag });
-				throw status(error.status, error.message);
-			}
-
-			const user = result.value;
 			const token = await jwt.sign({
 				id: user.id,
 				email: user.email,
@@ -74,15 +73,14 @@ const AuthRoute = new Elysia({ prefix: "/auth" })
 	.post(
 		"/register",
 		async ({ body, log }) => {
-			const result = await AuthService.register(body);
+			const user = unwrapOrThrow({
+				ok: await AuthService.register(body),
+				err: (e) => {
+					log.error(e.message, { _tag: e._tag });
+					throw status(e.status, e.message);
+				},
+			});
 
-			if (Result.isError(result)) {
-				const error = result.error;
-				log.error(error.message, { _tag: error._tag });
-				throw status(error.status, error.message);
-			}
-
-			const user = result.value;
 			return {
 				success: true,
 				user: {
